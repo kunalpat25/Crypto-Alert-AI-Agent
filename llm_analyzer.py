@@ -1,60 +1,129 @@
-# llm_analyzer.py
+# llm_analyzer.py update with Groq API
 import logging
 import os
-import random
 import json
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 def analyze_with_llm(tweet, tokens, news):
     """
-    Analyze tweet with LLM to determine trading action.
-    In production, this would call OpenAI, Groq, or another LLM API.
+    Analyze tweet with Groq LLM API to determine trading action.
     """
+    groq_api_key = os.environ.get('GROQ_API_KEY')
     
-    # TODO: Implement actual LLM API call to analyze tweet
-    # For demo, we'll simulate LLM responses
-    # In production, implement actual API call to GPT/Mixtral/LLaMA
+    if not groq_api_key:
+        logger.error("GROQ_API_KEY environment variable not set")
+        return {
+            "action": "IGNORE",
+            "token": tokens[0] if tokens else "",
+            "confidence": 0,
+            "manipulation_probability": 50,
+            "reasoning": "Error: LLM API key not configured"
+        }
     
-    # Mock LLM analysis based on tokens and sentiment
-    actions = ["BUY", "SELL", "IGNORE"]
+    # Format news headlines as a string
+    news_text = "\n".join([f"- {headline}" for headline in news]) if news else "None"
     
-    # Simple rules for demo:
-    # - Elon + DOGE = BUY with high confidence
-    # - Any BTC mention = BUY with medium confidence
-    # - Default = IGNORE with low confidence
-    
-    if "elonmusk" in tweet["username"] and "DOGE" in tokens:
-        action = "BUY"
-        token = "DOGE"
-        confidence = random.randint(75, 95)
-        reasoning = "Elon Musk has historically influenced DOGE price with his tweets."
-    elif "BTC" in tokens:
-        action = "BUY"
-        token = "BTC"
-        confidence = random.randint(55, 75)
-        reasoning = "Bitcoin mentions by influential figures often precede price movements."
-    elif "ETH" in tokens and len(news) > 0:
-        action = "BUY"
-        token = "ETH"
-        confidence = random.randint(60, 80)
-        reasoning = "Ethereum mention combined with recent news suggests positive momentum."
-    else:
-        action = "IGNORE"
-        token = tokens[0] if tokens else ""
-        confidence = random.randint(30, 50)
-        reasoning = "Insufficient signal to warrant trading action."
-    
-    # Determine manipulation probability
-    manipulation_probability = random.randint(0, 100)
-    
-    analysis = {
-        "action": action,
-        "token": token,
-        "confidence": confidence,
-        "manipulation_probability": manipulation_probability,
-        "reasoning": reasoning
+    # Construct the prompt
+    prompt = f"""You are a financial analyst bot trained to analyze market-manipulative tweets.
+
+Tweet: "{tweet['text']}" by @{tweet['username']} ({tweet['name']})
+Mentioned tokens: {', '.join(tokens) if tokens else 'None'}
+Recent news: 
+{news_text}
+
+Analyze if this tweet hints at a market move. Consider:
+1. Is this likely to influence crypto prices?
+2. Does it contain direct or indirect signals about buying or selling?
+3. Is there evidence of potential market manipulation?
+
+Respond in JSON format:
+{{
+  "action": "BUY" or "SELL" or "IGNORE",
+  "token": "The token symbol to trade",
+  "confidence": A number from 0-100 representing confidence in this signal,
+  "manipulation_probability": A number from 0-100 representing likelihood this is market manipulation,
+  "reasoning": "Brief explanation of your analysis"
+}}
+"""
+
+    # Call Groq API (using Mixtral model)
+    headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json"
     }
     
-    logger.info(f"LLM Analysis: {json.dumps(analysis)}")
-    return analysis
+    payload = {
+        "model": "mixtral-8x7b-32768",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": 500
+    }
+    
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=payload
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            llm_response = result['choices'][0]['message']['content']
+            
+            # Extract JSON from response
+            try:
+                # Find JSON object in the response
+                json_start = llm_response.find('{')
+                json_end = llm_response.rfind('}') + 1
+                
+                if json_start >= 0 and json_end > json_start:
+                    json_str = llm_response[json_start:json_end]
+                    analysis = json.loads(json_str)
+                    
+                    # Ensure all required fields are present
+                    required_fields = ["action", "token", "confidence", "manipulation_probability", "reasoning"]
+                    for field in required_fields:
+                        if field not in analysis:
+                            analysis[field] = "" if field in ["token", "reasoning"] else 0
+                    
+                    logger.info(f"LLM Analysis: {json.dumps(analysis)}")
+                    return analysis
+                else:
+                    raise ValueError("No JSON object found in LLM response")
+                    
+            except Exception as e:
+                logger.error(f"Error parsing LLM response: {e}")
+                logger.error(f"Raw response: {llm_response}")
+                
+                # Fallback response
+                return {
+                    "action": "IGNORE",
+                    "token": tokens[0] if tokens else "",
+                    "confidence": 30,
+                    "manipulation_probability": 50,
+                    "reasoning": f"Error parsing LLM response: {str(e)[:100]}"
+                }
+        else:
+            logger.error(f"LLM API error: {response.status_code} - {response.text}")
+            return {
+                "action": "IGNORE",
+                "token": tokens[0] if tokens else "",
+                "confidence": 0,
+                "manipulation_probability": 50,
+                "reasoning": f"LLM API error: {response.status_code}"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error calling LLM API: {e}")
+        return {
+            "action": "IGNORE",
+            "token": tokens[0] if tokens else "",
+            "confidence": 0,
+            "manipulation_probability": 50,
+            "reasoning": f"Error: {str(e)[:100]}"
+        }

@@ -1,13 +1,11 @@
-# twitter_listener.py
-import json
+# twitter_listener.py using twitter-scraper-selenium
 import logging
-import os
-import random
+import json
 from datetime import datetime, timedelta
+from twitter_scraper_selenium import scrape_profile
 
 logger = logging.getLogger(__name__)
 
-# Load Twitter handles from config
 def load_twitter_handles():
     try:
         with open('config/twitter_handles.json', 'r') as f:
@@ -17,54 +15,40 @@ def load_twitter_handles():
         return {
             "elonmusk": "Elon Musk",
             "cz_binance": "CZ Binance",
-            "SBF_FTX": "Sam Bankman-Fried",
             "VitalikButerin": "Vitalik Buterin"
         }
 
-# Mock function to simulate getting tweets (replace with actual API call later)
 def get_latest_tweets():
     handles = load_twitter_handles()
+    current_time = datetime.now()
+    since_time = current_time - timedelta(minutes=2)  # Check tweets from last 2 minutes
     
-    # TODO : Implement actual Twitter API call to fetch tweets from these handles
-    # For now, we will simulate the behavior with a mock function
-    # For demo purposes, randomly return a tweet from one of our monitored accounts
-    # In production, this would call Twitter API or use scraping
+    all_tweets = []
     
-    # Mock tweets for testing
-    mock_tweets = [
-        {
-            "id": "123456789",
-            "username": "elonmusk",
-            "name": "Elon Musk",
-            "text": "Dogecoin to the moon! $DOGE",
-            "timestamp": datetime.now().isoformat(),
-            "profile_image": "https://example.com/elonmusk.jpg"
-        },
-        {
-            "id": "987654321",
-            "username": "cz_binance",
-            "name": "CZ Binance",
-            "text": "Just bought more $BTC. Long-term bullish!",
-            "timestamp": datetime.now().isoformat(),
-            "profile_image": "https://example.com/cz.jpg"
-        },
-        {
-            "id": "543216789",
-            "username": "VitalikButerin",
-            "name": "Vitalik Buterin",
-            "text": "Excited about the latest $ETH developments. Scaling solutions coming soon.",
-            "timestamp": datetime.now().isoformat(),
-            "profile_image": "https://example.com/vitalik.jpg"
-        }
-    ]
+    for username, display_name in handles.items():
+        try:
+            # Fetch the 5 most recent tweets for each user
+            # TODO: test the working and use alternative library if needed
+            tweets = scrape_profile(twitter_username=username, tweets_count=5, browser="chrome", headless=True)
+            
+            for tweet in tweets:
+                # Parse the tweet timestamp
+                tweet_time = datetime.strptime(tweet['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
+                
+                # Check if tweet is recent enough (within last 2 minutes)
+                if tweet_time >= since_time:
+                    tweet_data = {
+                        "id": str(tweet['tweet_id']),
+                        "username": username,
+                        "name": display_name,
+                        "text": tweet['text'],
+                        "timestamp": tweet['timestamp'],
+                        "profile_image": tweet.get('profile_picture', "")
+                    }
+                    all_tweets.append(tweet_data)
+        
+        except Exception as e:
+            logger.error(f"Error fetching tweets for {username}: {e}")
     
-    # TODO: Implement logic to check if we've already processed these tweets
-    # In the real implementation, we would:
-    # 1. Check if we've already processed these tweets (using a simple DB or file)
-    # 2. Only return tweets newer than our last check
-    
-    # For demo, randomly decide whether to return tweets or empty list
-    if random.random() < 0.3:  # 30% chance to get a tweet
-        return [random.choice(mock_tweets)]
-    
-    return []  # Most poll cycles will return nothing
+    logger.info(f"Fetched {len(all_tweets)} new tweets")
+    return all_tweets

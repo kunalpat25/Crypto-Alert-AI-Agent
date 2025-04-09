@@ -7,6 +7,7 @@ from sentiment_analyzer import analyze_sentiment
 from news_fetcher import fetch_related_news
 from llm_analyzer import analyze_with_llm
 from telegram_bot import send_telegram_alert
+from profile_change_detector import detect_profile_changes
 
 # Configure logging
 logging.basicConfig(
@@ -24,23 +25,40 @@ def main():
             # 1. Get latest tweets from monitored accounts
             tweets = get_latest_tweets()
             
+            # Inside the main loop:
             for tweet in tweets:
-                # 2. Detect mentioned tokens
+                # Check for profile changes
+                profile_changes = detect_profile_changes(
+                    tweet['username'], 
+                    tweet['name'], 
+                    tweet['profile_image']
+                )
+                
+                # Detect mentioned tokens
                 tokens = detect_tokens(tweet['text'])
                 
-                if tokens:
-                    # 3. Analyze sentiment
+                # If profile changed but no tokens detected in tweet, check if name contains tokens
+                if profile_changes and not tokens:
+                    if 'name_change' in profile_changes:
+                        new_name = profile_changes['name_change']['new']
+                        name_tokens = detect_tokens(new_name)
+                        if name_tokens:
+                            tokens = name_tokens
+                            logger.info(f"Detected tokens in profile name change: {tokens}")
+                
+                if tokens or profile_changes:
+                    # Analyze sentiment
                     sentiment = analyze_sentiment(tweet['text'])
                     
-                    # 4. Fetch related news
+                    # Fetch related news
                     news = fetch_related_news(tokens)
                     
-                    # 5. Analyze with LLM
-                    analysis = analyze_with_llm(tweet, tokens, news)
+                    # Analyze with LLM (include profile changes in analysis)
+                    analysis = analyze_with_llm(tweet, tokens, news, profile_changes)
                     
-                    # 6. Send alert if action recommended
+                    # Send alert if action recommended
                     if analysis['action'] != 'IGNORE':
-                        send_telegram_alert(tweet, analysis, tokens)
+                        send_telegram_alert(tweet, analysis, tokens, profile_changes)
             
             # Wait for next polling interval 
             logger.info("Waiting for next polling cycle...")
