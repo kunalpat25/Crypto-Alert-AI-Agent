@@ -4,6 +4,14 @@ import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+import re
+
+def escape_markdown(text, version=2):
+    """
+    Escapes special characters for Telegram Markdown.
+    """
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 load_dotenv()
 
@@ -21,6 +29,7 @@ def send_telegram_alert(tweet, analysis, tokens):
         return False
     
     # Format the message
+
     message = f"""
 📣 Tweet by @{tweet['username']}
 🧠 LLM: {analysis['action']} {analysis['token']}
@@ -30,13 +39,14 @@ def send_telegram_alert(tweet, analysis, tokens):
 
 🔍 Reasoning: {analysis['reasoning']}
 ⚠️ Manipulation probability: {analysis['manipulation_probability']}%
-""".replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`').replace('!', '\\!').replace('.', '\\.')
+"""
+    escaped_message = escape_markdown(message, version=2)
     
     # Send the message
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": chat_id,
-        "text": message,
+        "text": escaped_message,
         "parse_mode": "MarkdownV2"
     }
     
