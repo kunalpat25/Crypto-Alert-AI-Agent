@@ -17,13 +17,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 polling_interval = 10  # seconds
 
-def main():
+async def main():
     logger.info("Starting Crypto Alert Bot")
     
     while True:
         try:
             # 1. Get latest tweets from monitored accounts
-            tweets = get_latest_tweets()
+            tweets = await get_latest_tweets()
             
             # Inside the main loop:
             for tweet in tweets:
@@ -68,5 +68,7 @@ def main():
             logger.error(f"Error in main loop: {e}")
             time.sleep(polling_interval)  # Continue despite errors
 
+import asyncio
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
