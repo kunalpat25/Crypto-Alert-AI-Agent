@@ -8,7 +8,12 @@ from news_fetcher import fetch_related_news
 from llm_analyzer import analyze_with_llm
 from telegram_bot import send_telegram_alert
 from profile_change_detector import detect_profile_changes
+import asyncio
+import sys
 
+if sys.platform == 'win32':
+	asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+ 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -17,13 +22,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 polling_interval = 10  # seconds
 
-async def main():
+def main():
     logger.info("Starting Crypto Alert Bot")
     
     while True:
         try:
             # 1. Get latest tweets from monitored accounts
-            tweets = await get_latest_tweets()
+            tweets = get_latest_tweets()
             
             # Inside the main loop:
             for tweet in tweets:
@@ -68,7 +73,6 @@ async def main():
             logger.error(f"Error in main loop: {e}")
             time.sleep(polling_interval)  # Continue despite errors
 
-import asyncio
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
